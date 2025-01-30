@@ -1,4 +1,18 @@
-﻿#include <iostream>
+﻿/**
+* 
+* Solution to course project #5
+* Introduction to Programming course
+* Faculty of Mathematics and Informatics of Sofia University
+* Winter semester 2024/2025
+* 
+* @author Milan Georgiev
+* @idnumber 4MI0600542* @compiler VC
+* 
+* <file for ASCII PAC-MAN game>
+* 
+*/
+
+#include <iostream>
 #include <fstream>
 #include <cstdlib>
 #include <cmath>
@@ -409,7 +423,8 @@ void movePinky(int& pinkyRow, int& pinkyColumn, int& pinkyDirectionRow, int& pin
     if (targetColumn >= columns) targetColumn = columns - 1;
 
     // Move Pinky towards the target position
-    moveGhostChaseMode(pinkyRow, pinkyColumn, pinkyDirectionRow, pinkyDirectionColumn, pinkyPreviousTile, PINKY_CHAR, targetRow, targetColumn);
+    moveGhostChaseMode(pinkyRow, pinkyColumn, pinkyDirectionRow, pinkyDirectionColumn,
+    pinkyPreviousTile, PINKY_CHAR, targetRow, targetColumn);
 }
 
 void moveInky(int& inkyRow, int& inkyColumn, int& inkyDirectionRow, int& inkyDirectionColumn,
