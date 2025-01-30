@@ -1,731 +1,686 @@
 ﻿#include <iostream>
 #include <fstream>
 #include <cstdlib>
+#include <cmath>
 #include <ctime>
 #include <windows.h>
 
 using namespace std;
 
-const char* mapFile = "map.txt";
+char** map = nullptr;
 
-const int MAX_SIZE = 50;
-char map[MAX_SIZE][MAX_SIZE];
-int mapLength, mapHeigth;
-const char path = 'p';
+static const char PACMAN_CHAR = 'Y';
+static const char BLINKY_CHAR = 'B';
+static const char PINKY_CHAR = 'P';
+static const char INKY_CHAR = 'I';
+static const char CLYDE_CHAR = 'C';
 
-int pacManX, pacManY;
-int blinkyX, blinkyY, pinkyX, pinkyY, inkyX, inkyY, clydeX, clydeY;
-int blinkyDirX, blinkyDirY, pinkyDirX, pinkyDirY, inkyDirX, inkyDirY, clydeDirX, clydeDirY;
+int rows = 0;
+int columns = 0;
 
-bool blinkyActive = true, pinkyActive = false, inkyActive = false, clydeActive = false;
-
+bool gameOver = false;
 bool frightenedMode = false;
-int frightenedModeCounter = 0;
+bool switchMode = false;
+int  frightenedModeMovesCounter = 0;
+int  currentScore = 0;
 
-int score = 0;
+char blinkyPrevious = ' ';
+char pinkyPrevious = ' ';
+char inkyPrevious = ' ';
+char clydePrevious = ' ';
 
-const int DX[4] = { -1, 1, 0, 0 };
-const int DY[4] = { 0, 0, -1, 1 };
+int blinkyPrevDr = 0, blinkyPrevDc = 0;
+int pinkyPrevDr = 0, pinkyPrevDc = 0;
+int inkyPrevDr = 0, inkyPrevDc = 0;
+int clydePrevDr = 0, clydePrevDc = 0;
 
-char pacManDirection = 'D';
-int ghostQueue[MAX_SIZE * MAX_SIZE][2];
-int ghostVisited[MAX_SIZE][MAX_SIZE];
-
-bool isEven(int i) {
-    return !(i % 2);
+bool isValidPosition(int r, int c) {
+    return (r >= 0 && r < rows && c >= 0 && c < columns);
 }
 
-
-bool checkMapSize(int length, int heigth) {
-    return !(length > 50 || heigth > 50 || length <=10 || heigth <= 10 || !isEven(length) || !isEven(heigth));
+bool isValidMovePacMan(int r, int c) {
+    if (!isValidPosition(r, c)) return false;
+    return (map[r][c] == ' ' || map[r][c] == '-' || map[r][c] == '@');
 }
 
-bool isValidMove(int x, int y, int length, int heigth) {
-    return x >= 0 && x < length && y >= 0 && y < heigth && map[y][x] != '#';
-}
+bool isValidMoveGhost(int r, int c)
+{
+    if (!isValidPosition(r, c)) return false;
 
-void generateAllWallMap(int length, int heigth) {
-    for (int i = 0; i < length; i++)
-    {
-        for (int j = 0; j < heigth; j++)
-        {
-            map[i][j] = '#';
-        }
-        cout << endl;
-    }
-}
+    if (map[r][c] == '#') return false;
 
-void ghostsPlace(int length, int heigth) {
-    int ghostZoneStartX = heigth / 2 - 1;
-    int ghostZoneStartY = length / 2 - 2;
-
-    for (int i = ghostZoneStartX; i < ghostZoneStartX + 2; i++) {
-        for (int j = ghostZoneStartY; j < ghostZoneStartY + 4; j++) {
-            map[i][j] = ' ';
-        }
-    }
-
-    map[ghostZoneStartX][ghostZoneStartY + 1] = 'B';
-    map[ghostZoneStartX][ghostZoneStartY + 2] = 'P';
-    map[ghostZoneStartX + 1][ghostZoneStartY + 1] = 'I';
-    map[ghostZoneStartX + 1][ghostZoneStartY + 2] = 'C';
-
-    blinkyDirX = -1; blinkyDirY = 0;  // Moving left initially
-    pinkyDirX = 0; pinkyDirY = 1;    // Moving down initially
-    inkyDirX = 1; inkyDirY = 0;      // Moving right initially
-    clydeDirX = 0; clydeDirY = -1;   // Moving up initially
-
-}
-
-void placeSuperFood(int length, int heigth) {
-    int superFCount = 0;
-    srand(time(0));
-
-    while (superFCount < 4)
-    {
-        int x = rand() % length;
-        int y = rand() % heigth;
-
-        if (map[y][x] == '-') {
-            map[y][x] = '@';
-            superFCount++;
-        }
-    }
-}
-
-void placeFood(int length, int heigth) {
-    for (int i = 0; i < length; i++)
-    {
-        for (int j = 0; j < heigth; j++)
-        {
-            if (map[i][j] == path) map[i][j] = '-';
-        }
-    }
-
-    placeSuperFood(length, heigth);
-}
-
-void generatePlayMap(int length, int heigth) {
-    if (!checkMapSize(length, heigth))
-    {
-        cout << "Invalid or uneven map size!" << endl;
-        return;
-    }
-
-    generateAllWallMap(length, heigth);
-
-    int startX = rand() % (length / 2) * 2 + 1;
-    int startY = rand() % (heigth / 2) * 2 + 1;
-    map[startX][startY] = path;
-
-    int stack[MAX_SIZE * MAX_SIZE][2];
-    int stackSize = 0;
-    stack[stackSize][0] = startX;
-    stack[stackSize][1] = startY;
-    stackSize++;
-
-    const int DX[4] = { 0, 1, 0, -1 };
-    const int DY[4] = { 1, 0, -1, 0 };
-
-    while (stackSize > 0) {
-        int x = stack[stackSize - 1][0];
-        int y = stack[stackSize - 1][1];
-        stackSize--;
-
-        int directions[4] = { 0, 1, 2, 3 };
-        for (int i = 0; i < 4; i++) {
-            int randIdx = rand() % (4 - i);
-            swap(directions[i], directions[randIdx]);
-        }
-
-        for (int dir : directions) {
-            int nx = x + DX[dir] * 2;
-            int ny = y + DY[dir] * 2;
-
-            // Проверка за валидност на клетката и границите
-            if (nx > 0 && nx < length - 1 && ny > 0 && ny < heigth / 2 && map[nx][ny] == '#') {
-                // Генериране на път в първата половина
-                map[x + DX[dir]][y + DY[dir]] = path;
-                map[nx][ny] = path;
-
-                // Огледално генериране
-                int mirrorY1 = heigth - 1 - (y + DY[dir]);
-                int mirrorY2 = heigth - 1 - ny;
-                map[x + DX[dir]][mirrorY1] = path;
-                map[nx][mirrorY2] = path;
-
-                // Добавяне към стека
-                stack[stackSize][0] = nx;
-                stack[stackSize][1] = ny;
-                stackSize++;
-            }
-        }
-    }
-
-    ghostsPlace(length, heigth);
-    map[1][1] = 'Y'; // Поставяме Пак-Ман в горния ъгъл
-    pacManX = 1;
-    pacManY = 1;
-    placeFood(length, heigth);
-
-
-}
-
-void saveMapInFile(const char* fileName, int length, int heigth) {
-
-    ofstream file(fileName);
-    if (!file) {
-        cout << "Unable to save map!" << endl;
-        return;
-    }
-
-    file << length << " " << heigth << endl;
-    
-    for (int i = 0; i < length; i++)
-    {
-        for (int j = 0; j < heigth; j++)
-        {
-            file << map[i][j];
-        }
-        file << std::endl;
-    }
-    file.close();
-}
-
-void loadMap(int length, int heigth) {
-    system("cls"); // Изчистване на екрана
-    for (int i = 0; i < length; i++) {
-        for (int j = 0; j < heigth; j++) {
-            cout << map[i][j];
-        }
-        cout << endl;
-    }
-    cout << "Score: " << score << endl;
-}
-
-bool movePacMan(char direction, int length, int heigth) {
-    int newX = pacManX, newY = pacManY;
-
-    if (direction == 'W') newY--;    // Move up
-    else if (direction == 'S') newY++; // Move down
-    else if (direction == 'A') newX--; // Move left
-    else if (direction == 'D') newX++; // Move right
-
-    // Check if the move is valid
-    if (newX >= 0 && newX < length && newY >= 0 && newY < heigth && map[newY][newX] != '#') {
-        pacManX = newX;
-        pacManY = newY;
-        return true;
-    }
-
-    return false; // Invalid move
-}
-
-// Handles Pac-Man's double movement during frightened mode
-void movePacManFrightened(char direction, int length, int heigth) {
-    for (int step = 0; step < 2; step++) {
-        if (!movePacMan(direction, length, heigth)) {
-            break; // Stop if the move fails
-        }
-    }
-}
-void resetGhostVisited() {
-    for (int i = 0; i < MAX_SIZE; i++) {
-        for (int j = 0; j < MAX_SIZE; j++) {
-            ghostVisited[i][j] = -1;
-        }
-    }
-}
-
-void moveBlinky() {
-    int front = 0, rear = 0;
-
-    ghostQueue[rear][0] = blinkyX;
-    ghostQueue[rear][1] = blinkyY;
-    rear++;
-
-    resetGhostVisited();
-    ghostVisited[blinkyX][blinkyY] = 0;
-
-    while (front < rear) {
-        int x = ghostQueue[front][0];
-        int y = ghostQueue[front][1];
-        front++;
-
-        for (int dir = 0; dir < 4; dir++) {
-            int nx = x + DX[dir];
-            int ny = y + DY[dir];
-
-            if (nx >= 0 && nx < mapLength && ny >= 0 && ny < mapHeigth && map[nx][ny] != '#' && ghostVisited[nx][ny] == -1) {
-                ghostVisited[nx][ny] = ghostVisited[x][y] + 1;
-                ghostQueue[rear][0] = nx;
-                ghostQueue[rear][1] = ny;
-                rear++;
-            }
-        }
-    }
-
-    int bestDir = -1;
-    int shortestDistance = INT_MAX;
-
-    for (int dir = 0; dir < 4; dir++) {
-        int nx = blinkyX + DX[dir];
-        int ny = blinkyY + DY[dir];
-
-        if (nx >= 0 && nx < mapLength && ny >= 0 && ny < mapHeigth && ghostVisited[nx][ny] != -1) {
-            if (ghostVisited[nx][ny] < shortestDistance) {
-                shortestDistance = ghostVisited[nx][ny];
-                bestDir = dir;
-            }
-        }
-    }
-
-    if (bestDir != -1) {
-        blinkyX += DX[bestDir];
-        blinkyY += DY[bestDir];
-    }
-}
-
-void movePinky() {
-    int targetX = pacManX;
-    int targetY = pacManY;
-
-    switch (pacManDirection) {
-    case 'W': // Moving Up
-        targetX -= 4;
-        targetY -= 4;
-        break;
-    case 'S': // Moving Down
-        targetX += 4;
-        break;
-    case 'A': // Moving Left
-        targetY -= 4;
-        break;
-    case 'D': // Moving Right
-        targetY += 4;
-        break;
-    }
-
-    targetX = max(0, min(targetX, mapLength - 1));
-    targetY = max(0, min(targetY, mapHeigth - 1));
-
-    int front = 0, rear = 0;
-
-    ghostQueue[rear][0] = pinkyX;
-    ghostQueue[rear][1] = pinkyY;
-    rear++;
-
-    resetGhostVisited();
-    ghostVisited[pinkyX][pinkyY] = 0;
-
-    while (front < rear) {
-        int x = ghostQueue[front][0];
-        int y = ghostQueue[front][1];
-        front++;
-
-        for (int dir = 0; dir < 4; dir++) {
-            int nx = x + DX[dir];
-            int ny = y + DY[dir];
-
-            if (nx >= 0 && nx < mapLength && ny >= 0 && ny < mapHeigth && map[nx][ny] != '#' && ghostVisited[nx][ny] == -1) {
-                ghostVisited[nx][ny] = ghostVisited[x][y] + 1;
-                ghostQueue[rear][0] = nx;
-                ghostQueue[rear][1] = ny;
-                rear++;
-            }
-        }
-    }
-
-    int bestDir = -1;
-    int shortestDistance = INT_MAX;
-
-    for (int dir = 0; dir < 4; dir++) {
-        int nx = pinkyX + DX[dir];
-        int ny = pinkyY + DY[dir];
-
-        if (nx >= 0 && nx < mapLength && ny >= 0 && ny < mapHeigth && ghostVisited[nx][ny] != -1) {
-            if (ghostVisited[nx][ny] < shortestDistance) {
-                shortestDistance = ghostVisited[nx][ny];
-                bestDir = dir;
-            }
-        }
-    }
-
-    if (bestDir != -1) {
-        pinkyX += DX[bestDir];
-        pinkyY += DY[bestDir];
-    }
-}
-
-void moveInky() {
-    int vectorX = pacManX - blinkyX;
-    int vectorY = pacManY - blinkyY;
-
-    int targetX = pacManX + vectorX;
-    int targetY = pacManY + vectorY;
-
-    targetX = max(0, min(targetX, mapLength - 1));
-    targetY = max(0, min(targetY, mapHeigth - 1));
-
-    int front = 0, rear = 0;
-
-    ghostQueue[rear][0] = inkyX;
-    ghostQueue[rear][1] = inkyY;
-    rear++;
-
-    resetGhostVisited();
-    ghostVisited[inkyX][inkyY] = 0;
-
-    while (front < rear) {
-        int x = ghostQueue[front][0];
-        int y = ghostQueue[front][1];
-        front++;
-
-        for (int dir = 0; dir < 4; dir++) {
-            int nx = x + DX[dir];
-            int ny = y + DY[dir];
-
-            if (nx >= 0 && nx < mapLength && ny >= 0 && ny < mapHeigth && map[nx][ny] != '#' && ghostVisited[nx][ny] == -1) {
-                ghostVisited[nx][ny] = ghostVisited[x][y] + 1;
-                ghostQueue[rear][0] = nx;
-                ghostQueue[rear][1] = ny;
-                rear++;
-            }
-        }
-    }
-
-    int bestDir = -1;
-    int shortestDistance = INT_MAX;
-
-    for (int dir = 0; dir < 4; dir++) {
-        int nx = inkyX + DX[dir];
-        int ny = inkyY + DY[dir];
-
-        if (nx >= 0 && nx < mapLength && ny >= 0 && ny < mapHeigth && ghostVisited[nx][ny] != -1) {
-            if (ghostVisited[nx][ny] < shortestDistance) {
-                shortestDistance = ghostVisited[nx][ny];
-                bestDir = dir;
-            }
-        }
-    }
-
-    if (bestDir != -1) {
-        inkyX += DX[bestDir];
-        inkyY += DY[bestDir];
-    }
-}
-
-
-void reverseGhost(int& ghostDirX, int& ghostDirY) {
-    ghostDirX = -ghostDirX;
-    ghostDirY = -ghostDirY;
-}
-
-void activateFrightenedMode() {
-    frightenedMode = true;
-    frightenedModeCounter = 0;
-
-    // Reverse all ghosts
-    reverseGhost(blinkyDirX, blinkyDirY);
-    reverseGhost(pinkyDirX, pinkyDirY);
-    reverseGhost(inkyDirX, inkyDirY);
-    reverseGhost(clydeDirX, clydeDirY);
-}
-
-bool isValidMove(int x, int y, int length, int heigth) {
-    return x >= 0 && x < length && y >= 0 && y < heigth && map[x][y] != '#';
-}
-
-void moveGhostRandomly(int& ghostX, int& ghostY, int& dirX, int& dirY, int length, int heigth) {
-    int possibleDirections[4][2] = { {1, 0}, {0, 1}, {-1, 0}, {0, -1} };
-    int newDirX, newDirY;
-
-    do {
-        int randomIndex = rand() % 4;
-        newDirX = possibleDirections[randomIndex][0];
-        newDirY = possibleDirections[randomIndex][1];
-    } while ((newDirX == -dirX && newDirY == -dirY) ||
-        !isValidMove(ghostX + newDirX, ghostY + newDirY, length, heigth));
-
-    dirX = newDirX;
-    dirY = newDirY;
-    ghostX += dirX;
-    ghostY += dirY;
-}
-
-bool checkGameOver() {
-    if ((pacManX == blinkyX && pacManY == blinkyY) ||
-        (pacManX == pinkyX && pacManY == pinkyY) ||
-        (pacManX == inkyX && pacManY == inkyY) ||
-        (pacManX == clydeX && pacManY == clydeY)) {
-        return true;
-    }
-    for (int i = 0; i < mapLength; i++) {
-        for (int j = 0; j < mapHeigth; j++) {
-            if (map[i][j] == '-' || map[i][j] == '@') {
-                return false;
-            }
-        }
+    if (map[r][c] == BLINKY_CHAR || map[r][c] == PINKY_CHAR || map[r][c] == INKY_CHAR || map[r][c] == CLYDE_CHAR) {
+        return false;
     }
     return true;
 }
 
-void moveClyde() {
-    int distanceToPacMan = abs(clydeX - pacManX) + abs(clydeY - pacManY);
+int pelletsSum() {
+    int total = 0;
+    for (int r = 0; r < rows; r++) {
 
-    if (distanceToPacMan <= 8) {
-        // Move away from Pac-Man
-        for (int dir = 0; dir < 4; dir++) {
-            int nx = clydeX - DX[dir];
-            int ny = clydeY - DY[dir];
+        for (int c = 0; c < columns; c++) {
 
-            if (nx >= 0 && nx < mapLength && ny >= 0 && ny < mapHeigth && map[nx][ny] != '#') {
-                clydeX = nx;
-                clydeY = ny;
-                return;
+            if (map[r][c] == '-') total++;
+            if (map[r][c] == '@') total += 50;
+        }
+    }
+    return total;
+}
+
+bool findCharacter(char ch, int& row, int& column) {
+    for (int r = 0; r < rows; r++) {
+        for (int c = 0; c < columns; c++) {
+            if (map[r][c] == ch) {
+                row = r;
+                column = c;
+                return true;
             }
         }
+    }
+    return false;
+}
+
+
+void updateFrightenedMode() {
+    if (!frightenedMode) return;
+    frightenedModeMovesCounter++;
+    if (frightenedModeMovesCounter >= 10) { // lasts 10 moves
+        frightenedMode = false;
+        frightenedModeMovesCounter = 0;
+    }
+}
+
+void ghostEaten(char ghostChar, int& gRow, int& gColumn, char& prevTile, int& previousDir, int& previousDc) {
+    map[gRow][gColumn] = prevTile;
+
+    if (ghostChar == BLINKY_CHAR) {
+        // top-right corner
+        gRow = 1;
+        gColumn = columns - 2;
+    }
+    else if (ghostChar == PINKY_CHAR) {
+        // top-left corner
+        gRow = 1;
+        gColumn = 1;
+    }
+    else if (ghostChar == INKY_CHAR) {
+        // bottom-right corner
+        gRow = rows - 2;
+        gColumn = columns - 2;
+    }
+    else if (ghostChar == CLYDE_CHAR) {
+        // bottom-left corner
+        gRow = rows - 2;
+        gColumn = 1;
+    }
+
+    // Put ghost in corner, store old tile
+    prevTile = map[gRow][gColumn];
+    map[gRow][gColumn] = ghostChar;
+
+    // Reset direction deltas
+    previousDir = 0;
+    previousDc = 0;
+}
+
+void calculateNewPosition(int& r, int& c, char dir, int step) {
+    switch (dir) {
+    case 'w': case 'W': r -= step; break;
+    case 'a': case 'A': c -= step; break;
+    case 's': case 'S': r += step; break;
+    case 'd': case 'D': c += step; break;
+    }
+}
+
+// Function to check for ghost collisions
+bool checkForGhostCollision(int& pacRow, int& pacColumn, char& tile) {
+    if (tile == BLINKY_CHAR || tile == PINKY_CHAR || tile == INKY_CHAR || tile == CLYDE_CHAR) {
+        if (!frightenedMode) {
+            gameOver = true;
+            cout << "Game Over! Caught by a ghost!" << endl;
+            return true;
+        }
+        else {
+            // If frightened, send the ghost to a corner
+            if (tile == BLINKY_CHAR) {
+                ghostEaten(BLINKY_CHAR, pacRow, pacColumn, blinkyPrevious, blinkyPrevDr, blinkyPrevDc);
+            }
+            else if (tile == PINKY_CHAR) {
+                ghostEaten(PINKY_CHAR, pacRow, pacColumn, pinkyPrevious, pinkyPrevDr, pinkyPrevDc);
+            }
+            else if (tile == INKY_CHAR) {
+                ghostEaten(INKY_CHAR, pacRow, pacColumn, inkyPrevious, inkyPrevDr, inkyPrevDc);
+            }
+            else if (tile == CLYDE_CHAR) {
+                ghostEaten(CLYDE_CHAR, pacRow, pacColumn, clydePrevious, clydePrevDr, clydePrevDc);
+            }
+            return false;  // Pac-Man continues moving
+        }
+    }
+    return false;  // No collision
+}
+
+// Function to handle power-up logic (frightened mode)
+void checkFrightenedMode(int& pacRow, int& pacColumn, char& tile) {
+    if (tile == '@') {
+        frightenedMode = true;
+        frightenedModeMovesCounter = 0;
+        switchMode = true;
+    }
+}
+
+// Function to update the map after moving Pac-Man
+void updateMap(int& pacRow, int& pacColumn, int nr, int nc) {
+    map[pacRow][pacColumn] = ' ';
+    map[nr][nc] = PACMAN_CHAR;
+}
+
+// Function to move Pac-Man
+void movePacMan(int& pacRow, int& pacColumn, char inputDir, int& score) {
+    // Pac-Man moves 2 squares if frightened, else 1
+    int steps = (frightenedMode ? 2 : 1);
+
+    while (steps-- > 0) {
+        int nr = pacRow;
+        int nc = pacColumn;
+        calculateNewPosition(nr, nc, inputDir, 1);
+
+        if (!isValidMovePacMan(nr, nc)) {
+            break;  // Can't move into wall or out-of-bounds
+        }
+
+        char tile = map[nr][nc];
+
+        // Check for ghost collision
+        if (checkForGhostCollision(nr, nc, tile)) {
+            return;
+        }
+
+        // Handle power-up logic
+        checkFrightenedMode(nr, nc, tile);
+
+        // Update the map with Pac-Man's new position
+        updateMap(pacRow, pacColumn, nr, nc);
+
+        // Increase score if Pac-Man eats a pellet or power-up
+        if (tile == '-') score++; 
+        if (tile == '@') score += 50;
+            
+        pacRow = nr;
+        pacColumn = nc;
+
+        updateFrightenedMode();
+        if (gameOver) return;
+    }
+}
+
+// Function to evaluate the best direction for the ghost to move towards the target
+bool evaluateBestDirection(int gRow, int gColumn, int targetRow, int targetColumn,
+    int previousDr, int previousDc, int& chosenDr, int& chosenDc) {
+    struct Direction { int dr, dc; };
+    Direction directions[4] = {
+        { -1,  0 },  // Up
+        {  0, -1 },  // Left
+        {  1,  0 },  // Down
+        {  0,  1 }   // Right
+    };
+
+    int oppositeDr = -previousDr, oppositeDc = -previousDc;
+    double bestDist = 1e9;  // Initialize with a large value
+    bool foundValid = false;
+
+    // Evaluate each direction
+    for (int i = 0; i < 4; i++) {
+        int dr = directions[i].dr;
+        int dc = directions[i].dc;
+
+        // Skip immediate reverse direction
+        if (dr == oppositeDr && dc == oppositeDc) {
+            continue;
+        }
+
+        int nr = gRow + dr;
+        int nc = gColumn + dc;
+
+        // Check if the move is valid
+        if (!isValidMoveGhost(nr, nc)) {
+            continue;
+        }
+
+        // Calculate distance to target
+        double dist = sqrt(pow(targetRow - nr, 2) + pow(targetColumn - nc, 2));
+        if (dist < bestDist) {
+            bestDist = dist;
+            chosenDr = dr;
+            chosenDc = dc;
+            foundValid = true;
+        }
+    }
+
+    // If no valid direction found, try the reverse direction or stand still
+    if (!foundValid) {
+        int nr = gRow + oppositeDr;
+        int nc = gColumn + oppositeDc;
+        if (isValidMoveGhost(nr, nc)) {
+            chosenDr = oppositeDr;
+            chosenDc = oppositeDc;
+            foundValid = true;
+        }
+        else {
+            chosenDr = 0;
+            chosenDc = 0;
+            foundValid = true;
+        }
+    }
+
+    return foundValid;
+}
+
+// Function to move the ghost and handle collisions
+void moveGhostChaseMode(int& gRow, int& gColumn, int& previousDr, int& previousDc, char& previousTile,
+    char ghostCh, int targetRow, int targetColumn) {
+
+    // Evaluate the best direction for the ghost to move
+    int chosenDr = 0, chosenDc = 0;
+    bool directionFound = evaluateBestDirection(gRow, gColumn, targetRow, targetColumn, previousDr, previousDc, chosenDr, chosenDc);
+
+    if (!directionFound) {
+        // If no valid direction is found, stand still (though this case should not happen)
+        return;
+    }
+
+    // Move the ghost in the chosen direction
+    map[gRow][gColumn] = previousTile;  // Reset the previous tile
+    gRow += chosenDr;
+    gColumn += chosenDc;
+
+    previousTile = map[gRow][gColumn];
+    map[gRow][gColumn] = ghostCh;  // Set the new ghost position
+
+    // Update the previous movement direction for the next move
+    previousDr = chosenDr;
+    previousDc = chosenDc;
+
+    // Handle collision with Pac-Man
+    if (previousTile == PACMAN_CHAR) {
+        if (!frightenedMode) {
+            gameOver = true;
+            cout << "Game Over! A ghost caught Pac-Man!" << endl;
+        }
+        else {
+            ghostEaten(ghostCh, gRow, gColumn, previousTile, previousDr, previousDc);
+        }
+    }
+}
+
+void moveGhostFrightened(int& gRow, int& gColumn, int& previousDr, int& previousDc, char& previousTile, char ghostCh) {
+    map[gRow][gColumn] = previousTile;
+
+    int directions[4][2] = {
+        {-1, 0}, // Up
+        { 0,-1}, // Left
+        { 1, 0}, // Down
+        { 0, 1}  // Right
+    };
+
+    int oppDr = -previousDr, oppDc = -previousDc;
+    bool moved = false;
+    int tries = 10;
+
+    while (!moved && tries-- > 0) {
+        int i = rand() % 4;
+        int dr = directions[i][0];
+        int dc = directions[i][1];
+
+        // skip immediate reverse
+        if (dr == oppDr && dc == oppDc) {
+            continue;
+        }
+        int nr = gRow + dr;
+        int nc = gColumn + dc;
+
+        if (!isValidMoveGhost(nr, nc)) {
+            continue;
+        }
+
+        // Move
+        gRow = nr;
+        gColumn = nc;
+        previousTile = map[gRow][gColumn];
+        map[gRow][gColumn] = ghostCh;
+        previousDr = dr;
+        previousDc = dc;
+        moved = true;
+
+        // Collide with Pac-Man => corner
+        if (previousTile == PACMAN_CHAR) {
+            ghostEaten(ghostCh, gRow, gColumn, previousTile, previousDr, previousDc);
+        }
+    }
+    // If we fail all attempts, try reversing or stand still
+    if (!moved) {
+        int nr = gRow + oppDr;
+        int nc = gColumn + oppDc;
+        if (isValidMoveGhost(nr, nc)) {
+            gRow = nr;
+            gColumn = nc;
+            previousTile = map[gRow][gColumn];
+            map[gRow][gColumn] = ghostCh;
+            previousDr = oppDr;
+            previousDc = oppDc;
+
+            if (previousTile == PACMAN_CHAR) {
+                ghostEaten(ghostCh, gRow, gColumn, previousTile, previousDr, previousDc);
+            }
+        }
+        else {
+            // stand still
+            map[gRow][gColumn] = ghostCh;
+        }
+    }
+}
+
+void movePinky(int& pinkyRow, int& pinkyColumn, int& pinkyDirectionRow, int& pinkyDirectionColumn,
+    char& pinkyPreviousTile, int pacRow, int pacColumn, char pacOrientation) {
+
+    // Determine the target position based on Pac-Man's direction
+    int targetRow = pacRow, targetColumn = pacColumn;
+
+    // Adjust the target position based on the direction Pac-Man is facing
+    if (pacOrientation == 'w' || pacOrientation == 'W') {
+        targetRow -= 4;
+        targetColumn -= 4;
+    }
+    else if (pacOrientation == 's' || pacOrientation == 'S') {
+        targetRow += 4;
+    }
+    else if (pacOrientation == 'a' || pacOrientation == 'A') {
+        targetColumn -= 4;
+    }
+    else if (pacOrientation == 'd' || pacOrientation == 'D') {
+        targetColumn += 4;
+    }
+
+    // Clamp the target position to ensure it's within the bounds of the map
+    if (targetRow < 0) targetRow = 0;
+    if (targetRow >= rows) targetRow = rows - 1;
+    if (targetColumn < 0) targetColumn = 0;
+    if (targetColumn >= columns) targetColumn = columns - 1;
+
+    // Move Pinky towards the target position
+    moveGhostChaseMode(pinkyRow, pinkyColumn, pinkyDirectionRow, pinkyDirectionColumn, pinkyPreviousTile, PINKY_CHAR, targetRow, targetColumn);
+}
+
+void moveInky(int& inkyRow, int& inkyColumn, int& inkyDirectionRow, int& inkyDirectionColumn,
+    char& inkyPreviousTile, int pacRow, int pacColumn, int blinkyRow, int blinkyColumn, char pacOrientation) {
+
+    // Calculate Inky's target position based on Pac-Man's direction
+    int referenceRow = pacRow, referenceColumn = pacColumn;
+
+    // Adjust reference position based on Pac-Man's orientation (w, a, s, d)
+    if (pacOrientation == 'w' || pacOrientation == 'W') {
+        referenceRow -= 2;
+        referenceColumn -= 2;
+    }
+    else if (pacOrientation == 's' || pacOrientation == 'S') {
+        referenceRow += 2;
+    }
+    else if (pacOrientation == 'a' || pacOrientation == 'A') {
+        referenceColumn -= 2;
+    }
+    else if (pacOrientation == 'd' || pacOrientation == 'D') {
+        referenceColumn += 2;
+    }
+
+    // Calculate the "scattered" position for Inky based on Blinky's position
+    int vectorRow = (referenceRow - blinkyRow) * 2;
+    int vectorColumn = (referenceColumn - blinkyColumn) * 2;
+
+    // Determine the target position for Inky
+    int targetRow = blinkyRow + vectorRow;
+    int targetColumn = blinkyColumn + vectorColumn;
+
+    // Make sure Inky's target position is within the bounds of the map
+    if (targetRow < 0) targetRow = 0;
+    if (targetRow >= rows) targetRow = rows - 1;
+    if (targetColumn < 0) targetColumn = 0;
+    if (targetColumn >= columns) targetColumn = columns - 1;
+
+    // Move Inky towards the target position
+    moveGhostChaseMode(inkyRow, inkyColumn, inkyDirectionRow, inkyDirectionColumn, inkyPreviousTile, INKY_CHAR, targetRow, targetColumn);
+}
+
+void moveClyde(int& cRow, int& cColumn, int& cDirectionRow, int& cDirectionColumn, char& cPreviousTile, int pacRow, int pacColumn)
+{
+    // Calculate the Euclidean distance between Clyde and Pac-Man
+    double distanceToPacMan = sqrt(pow(cColumn - pacColumn, 2) + pow(cRow - pacRow, 2));
+
+    // If Clyde is far enough from Pac-Man, he chases Pac-Man
+    if (distanceToPacMan >= 8.0) {
+        moveGhostChaseMode(cRow, cColumn, cDirectionRow, cDirectionColumn, cPreviousTile, CLYDE_CHAR, pacRow, pacColumn);
     }
     else {
-        // Random movement
-        int randDir = rand() % 4;
-        int nx = clydeX + DX[randDir];
-        int ny = clydeY + DY[randDir];
+        // If Clyde is close enough, he retreats to the bottom-left corner
+        int cornerRow = rows - 1;
+        int cornerColumn = 0;
 
-        if (nx >= 0 && nx < mapLength && ny >= 0 && ny < mapHeigth && map[nx][ny] != '#') {
-            clydeX = nx;
-            clydeY = ny;
-        }
+        moveGhostChaseMode(cRow, cColumn, cDirectionRow, cDirectionColumn, cPreviousTile, CLYDE_CHAR, cornerRow, cornerColumn);
     }
 }
-void checkGhostEaten(int ghostX, int ghostY, char ghost) {
-    if (pacManX == ghostX && pacManY == ghostY) {
-        if (frightenedMode) {
-            // Pac-Man eats the ghost
-            score += 200; // Example score for eating a ghost
-            cout << "Ghost " << ghost << " eaten! Score: " << score << endl;
 
-            // Send the ghost back to its starting position
-            switch (ghost) {
-            case 'B':
-                blinkyX = mapLength - 1; // Top-right corner
-                blinkyY = 0;
+void loadMap(const char* filePath) {
+    std::ifstream file(filePath);
+    if (!file.is_open()) {
+        std::cerr << "Error: Unable to open file " << filePath << std::endl;
+        return;
+    }
+    file >> rows >> columns;
+    file.ignore();
+
+    map = new char* [rows];
+    for (int i = 0; i < rows; ++i) {
+        map[i] = new char[columns + 1];
+        file.getline(map[i], columns + 1);
+    }
+    file.close();
+}
+
+void clearMap() {
+    if (!map) return;
+    for (int i = 0; i < rows; i++) {
+        delete[] map[i];
+    }
+    delete[] map;
+    map = nullptr;
+}
+
+void printMap() {
+    for (int i = 0; i < rows; i++) {
+        for (int j = 0; j < columns; j++) {
+            char ch = map[i][j];
+            switch (ch) {
+            case PACMAN_CHAR: // 'Y'
+                cout << ch;
                 break;
-            case 'P':
-                pinkyX = 0; // Top-left corner
-                pinkyY = 0;
+            case BLINKY_CHAR: // 'B'
+                cout << ch;
                 break;
-            case 'I':
-                inkyX = mapLength - 1; // Bottom-right corner
-                inkyY = mapHeigth - 1;
+            case PINKY_CHAR:  // 'P'
+                cout << ch;
                 break;
-            case 'C':
-                clydeX = 0; // Bottom-left corner
-                clydeY = mapHeigth - 1;
+            case INKY_CHAR:   // 'I'
+                cout << ch;
+                break;
+            case CLYDE_CHAR:  // 'C'
+                cout << ch;
                 break;
             default:
+                cout << ch;
                 break;
             }
         }
-        else {
-            cout << "You got caught by ghost " << ghost << "! Game Over!" << endl;
-            exit(0);
-        }
+        cout << endl;
     }
 }
 
-void resetGhostMovement(int& dirX, int& dirY, char ghost) {
-    // Reset to default directions based on the ghost's starting direction
-    switch (ghost) {
-    case 'B': // Blinky's default direction
-        dirX = -1; // Example: Moving left initially
-        dirY = 0;
-        break;
-    case 'P': // Pinky's default direction
-        dirX = 0; // Example: Moving downward initially
-        dirY = 1;
-        break;
-    case 'I': // Inky's default direction
-        dirX = 1; // Example: Moving right initially
-        dirY = 0;
-        break;
-    case 'C': // Clyde's default direction
-        dirX = 0; // Example: Moving upward initially
-        dirY = -1;
-        break;
-    default:
-        dirX = 0;
-        dirY = 0;
-        break;
+// Function to handle user input (movement or quitting)
+bool directionInput(char& pacOrientation) {
+    cout << endl << "Move (w/a/s/d) or q to quit: ";
+    char moveKey;
+    cin >> moveKey;
+
+    // Handle quit or invalid input
+    if (moveKey == 'q') return false;
+    if (moveKey != 'w' && moveKey != 'a' && moveKey != 's' && moveKey != 'd') {
+        return true; // Skip invalid keys
+    }
+
+    pacOrientation = moveKey; // Update Pac-Man's direction
+    return true; // Valid input
+}
+
+// Function to move Pac-Man
+void movePacManIfValid(int& pacRow, int& pacColumn, char pacOrientation, int& score) {
+    movePacMan(pacRow, pacColumn, pacOrientation, score);
+    if (gameOver) {
+        cout << "Game Over! Caught by a ghost!" << endl;
     }
 }
 
+// Function to move ghosts in frightened mode
+void moveGhostsInFrightenedMode(int& bRow, int& bColumn, int& pRow, int& pColumn,
+    int& iRow, int& iColumn, int& cRow, int& cColumn) {
+    moveGhostFrightened(bRow, bColumn, blinkyPrevDr, blinkyPrevDc, blinkyPrevious, BLINKY_CHAR);
+    if (gameOver) return;
 
+    moveGhostFrightened(pRow, pColumn, pinkyPrevDr, pinkyPrevDc, pinkyPrevious, PINKY_CHAR);
+    if (gameOver) return;
 
-void terminateFrightenedMode() {
-    frightenedMode = false;
-    resetGhostMovement(blinkyDirX, blinkyDirY, 'B');
-    resetGhostMovement(pinkyDirX, pinkyDirY, 'P');
-    resetGhostMovement(inkyDirX, inkyDirY, 'I');
-    resetGhostMovement(clydeDirX, clydeDirY, 'C');
+    moveGhostFrightened(iRow, iColumn, inkyPrevDr, inkyPrevDc, inkyPrevious, INKY_CHAR);
+    if (gameOver) return;
+
+    moveGhostFrightened(cRow, cColumn, clydePrevDr, clydePrevDc, clydePrevious, CLYDE_CHAR);
+    if (gameOver) return;
 }
 
-void gameLoop(int length, int heigth) {
-    while (!checkGameOver()) {
-        loadMap(length, heigth);
+// Function to move ghosts in normal chase mode
+void moveGhostsInNormalMode(int& bRow, int& bColumn, int& pRow, int& pColumn,
+    int& iRow, int& iColumn, int& cRow, int& cColumn,
+    int pacRow, int pacColumn, int currentScore, char pacOrientation) {
+    moveGhostChaseMode(bRow, bColumn, blinkyPrevDr, blinkyPrevDc, blinkyPrevious, BLINKY_CHAR, pacRow, pacColumn);
+    if (gameOver) return;
 
-        // Handle Pac-Man movement
-        if (frightenedMode) {
-            if (GetAsyncKeyState('W') & 0x8000) {
-                movePacManFrightened('W', length, heigth);
-            }
-            else if (GetAsyncKeyState('S') & 0x8000) {
-                movePacManFrightened('S', length, heigth);
-            }
-            else if (GetAsyncKeyState('A') & 0x8000) {
-                movePacManFrightened('A', length, heigth);
-            }
-            else if (GetAsyncKeyState('D') & 0x8000) {
-                movePacManFrightened('D', length, heigth);
-            }
-        }
-        else {
-            if (GetAsyncKeyState('W') & 0x8000) {
-                movePacMan('W', length, heigth);
-            }
-            else if (GetAsyncKeyState('S') & 0x8000) {
-                movePacMan('S', length, heigth);
-            }
-            else if (GetAsyncKeyState('A') & 0x8000) {
-                movePacMan('A', length, heigth);
-            }
-            else if (GetAsyncKeyState('D') & 0x8000) {
-                movePacMan('D', length, heigth);
-            }
-        }
+    // Activate Pinky at 20 points
+    if (currentScore >= 20) {
+        movePinky(pRow, pColumn, pinkyPrevDr, pinkyPrevDc, pinkyPrevious, pacRow, pacColumn, pacOrientation);
+        if (gameOver) return;
+    }
 
-        // Activate frightened mode on superfood consumption
-        if (map[pacManY][pacManX] == '@') {
-            activateFrightenedMode();
-            frightenedModeCounter = 0;
-            map[pacManY][pacManX] = ' '; // Remove superfood
-        }
+    // Activate Inky at 40 points
+    if (currentScore >= 40) {
+        moveInky(iRow, iColumn, inkyPrevDr, inkyPrevDc, inkyPrevious, pacRow, pacColumn, bRow, bColumn, pacOrientation);
+        if (gameOver) return;
+    }
 
-        // Handle frightened mode logic
-        if (frightenedMode) {
-            frightenedModeCounter++;
-            if (frightenedModeCounter >= 10) {
-                terminateFrightenedMode();
-            }
-        }
-
-        if (frightenedMode)
-        {
-            // Move ghosts randomly during frightened mode
-            moveGhostRandomly(blinkyX, blinkyY, blinkyDirX, blinkyDirY, length, heigth);
-            moveGhostRandomly(pinkyX, pinkyY, pinkyDirX, pinkyDirY, length, heigth);
-            moveGhostRandomly(inkyX, inkyY, inkyDirX, inkyDirY, length, heigth);
-            moveGhostRandomly(clydeX, clydeY, clydeDirX, clydeDirY, length, heigth);
-        }
-        else {
-            // Regular ghost movement
-            moveBlinky();
-            movePinky();
-            moveInky();
-            moveClyde();
-        }
-
-        // Check for ghost collisions and respawn if needed
-        checkGhostEaten(blinkyX, blinkyY, 'B');
-        checkGhostEaten(pinkyX, pinkyY, 'P');
-        checkGhostEaten(inkyX, inkyY, 'I');
-        checkGhostEaten(clydeX, clydeY, 'C');
-
-        // Check game over
-        if (checkGameOver()) {
-            cout << "Game Over! Final Score: " << score << endl;
-            break;
-        }
-
-        Sleep(100); // Adjust game speed
+    // Activate Clyde at 60 points
+    if (currentScore >= 60) {
+        moveClyde(cRow, cColumn, clydePrevDr, clydePrevDc, clydePrevious, pacRow, pacColumn);
+        if (gameOver) return;
     }
 }
 
-/*void gameLoop() {
-    while (!checkGameOver()) {
-        // Clear the screen
+// Function to check the win condition
+bool checkWinCondition(int currentScore, int totalPellets) {
+    if (currentScore >= totalPellets) {
+        cout << "You Win! All pellets collected!" << endl;
+        return true;
+    }
+    return false;
+}
+
+
+// The main game loop
+void gameLoop(int& pacRow, int& pacColumn, char& pacOrientation,
+    int& bRow, int& bColumn,
+    int& pRow, int& pColumn,
+    int& iRow, int& iColumn,
+    int& cRow, int& cColumn,
+    int totalPellets) {
+
+    while (!gameOver) {
         system("cls");
+        printMap();
+        cout << "Score: " << currentScore << " / " << totalPellets << endl;
 
-        // Display the map and score
-        loadMap(mapLength, mapHeigth);
+        // Check for win condition
+        if (checkWinCondition(currentScore, totalPellets)) break;
 
-        // Input and Pac-Man movement
-        char input;
-        cout << "Enter move (W/A/S/D): ";
-        cin >> input;
-        input = toupper(input);
+        // Handle user input (movement or quit)
+        if (!directionInput(pacOrientation)) break;
 
+        // Move Pac-Man
+        movePacManIfValid(pacRow, pacColumn, pacOrientation, currentScore);
+        if (gameOver) break;
+
+        // Handle ghosts' movement
         if (frightenedMode) {
-            movePacManFrightened(input, mapLength, mapHeigth);
-        }
-        else {
-            movePacMan(input, mapLength, mapHeigth);
-        }
-
-        // Move ghosts
-        if (blinkyActive) moveBlinky();
-        if (pinkyActive) movePinky();
-        if (inkyActive) moveInky();
-        if (clydeActive) moveClyde();
-
-        // Check if Pac-Man eats food
-        if (map[pacManX][pacManY] == '-') {
-            map[pacManX][pacManY] = ' ';
-            score += 10;
-        }
-        else if (map[pacManX][pacManY] == '@') {
-            map[pacManX][pacManY] = ' ';
-            score += 50;
-            activateFrightenedMode();
-        }
-
-        // Check ghost interactions
-        checkGhostEaten(blinkyX, blinkyY, 'B');
-        checkGhostEaten(pinkyX, pinkyY, 'P');
-        checkGhostEaten(inkyX, inkyY, 'I');
-        checkGhostEaten(clydeX, clydeY, 'C');
-
-        // Update frightened mode counter
-        if (frightenedMode) {
-            frightenedModeCounter++;
-            if (frightenedModeCounter >= 50) { // Frightened mode lasts 50 cycles
-                terminateFrightenedMode();
+            if (switchMode) {
+                // Reverse previous movement directions for ghosts
+                blinkyPrevDr *= -1; blinkyPrevDc *= -1;
+                pinkyPrevDr *= -1; pinkyPrevDc *= -1;
+                inkyPrevDr *= -1; inkyPrevDc *= -1;
+                clydePrevDr *= -1; clydePrevDc *= -1;
+                switchMode = false; // Reset switch mode
             }
+            moveGhostsInFrightenedMode(bRow, bColumn, pRow, pColumn, iRow, iColumn, cRow, cColumn);
+            continue; // Skip the normal ghost chase logic
         }
 
-        // Pause briefly to control game speed
-        Sleep(200); // Adjust the duration as needed
+        // Normal mode: Ghosts chase Pac-Man
+        moveGhostsInNormalMode(bRow, bColumn, pRow, pColumn, iRow, iColumn, cRow, cColumn, pacRow, pacColumn, currentScore, pacOrientation);
     }
-
-    cout << "Game Over! Final Score: " << score << endl;
-}*/
+}
 
 int main() {
-    srand(time(0)); // Seed random number generator
+    srand((unsigned)time(NULL));
 
-    cout << "Enter map dimensions (length height): ";
-    cin >> mapLength >> mapHeigth;
-
-    if (!checkMapSize(mapLength, mapHeigth)) {
-        cout << "Invalid map size! Ensure the dimensions are even and between 10 and 50.\n";
+    const char* mapFile = "map.txt";
+    loadMap(mapFile);
+    if (!map) {
+        cerr << "Error: Could not load map." << endl;
         return 1;
     }
 
-    // Generate and display the map
-    generatePlayMap(mapLength, mapHeigth);
-    saveMapInFile(mapFile, mapLength, mapHeigth);
+    int totalPellets = pelletsSum();
 
-    gameLoop(mapLength, mapHeigth);
+    int pacRow = 0, pacCol = 0;
+    if (!findCharacter(PACMAN_CHAR, pacRow, pacCol)) {
+        cerr << "Error: Pac-Man not found in map!" << endl;
+        clearMap();
+        return 1;
+    }
 
+    int blinkyRow = 0, blinkyColumn = 0;
+    int pinkyRow = 0, pinkyColumn = 0;
+    int inkyRow = 0, inkyColumn = 0;
+    int clydeRow = 0, clydeColumn = 0;
+    findCharacter(BLINKY_CHAR, blinkyRow, blinkyColumn);
+    findCharacter(PINKY_CHAR, pinkyRow, pinkyColumn);
+    findCharacter(INKY_CHAR, inkyRow, inkyColumn);
+    findCharacter(CLYDE_CHAR, clydeRow, clydeColumn);
+
+    // Initialize
+    //blinkyPrevious = ' ';
+    //pinkyPrevious = ' ';
+    //inkyPrevious = ' ';
+    //clydePrevious = ' ';
+
+    char pacManOrientation = 'd'; // Default facing right
+
+    gameLoop(pacRow, pacCol, pacManOrientation, blinkyRow, blinkyColumn, pinkyRow, pinkyColumn, 
+        inkyRow, inkyColumn, clydeRow, clydeColumn, totalPellets);
+
+    clearMap();
     return 0;
 }
